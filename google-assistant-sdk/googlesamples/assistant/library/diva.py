@@ -32,24 +32,25 @@ from google.assistant.library.event import EventType
 from google.assistant.library.file_helpers import existing_file
 from google.assistant.library.device_helpers import register_device
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)s:%(name)s:%(message)s"
 )
+
+DEVICE_API_URL = 'https://embeddedassistant.googleapis.com/v1alpha2'
 
 COMMANDS = {}
 COMMANDS['0004368999'] = "Riproduci Peppa Pig da Netflix"
 
 class MyAssistant(object):
 
-    def __init__(self, credentials, device_model_id, project_id):
+    def __init__(self, credentials_file, project_id, device_model_id):
         self._assistant = None
         self._device_model_id = device_model_id
-        self.project_id = project_id
+        self._project_id = project_id
         self._can_configure = False
         self._can_start_conversation = False
-        self._credentials = credentials
+        self._credentials_file = credentials_file
         self._task = threading.Thread(target=self._run_task)
 
     def start(self):
@@ -60,14 +61,16 @@ class MyAssistant(object):
         self._task.start()
 
     def _run_task(self):
-        with open(self._credentials, 'r') as f:
-            credentials = google.oauth2.credentials.Credentials(token=None,
+        with open(self._credentials_file, 'r') as f:
+            self._credentials = google.oauth2.credentials.Credentials(token=None,
                                                                 **json.load(f))
 
-        with Assistant(credentials,self._device_model_id) as assistant:
+        with Assistant(self._credentials,self._device_model_id) as assistant:
             self._assistant = assistant
-            self._device_id = assistant.device_id
-            if self._project_id:
+            self._device_id = 'assistantsdk-170114-project-diva-jy6ql4'
+            print('device_model_id:', self._device_model_id + '\n' +
+                  'device_id:', self._assistant.device_id + '\n')
+            if self._project_id!='':
                 self._register_device()
             for event in assistant.start():
                 self._process_event(event)
@@ -119,7 +122,7 @@ class MyAssistant(object):
             print('Sending text message: %s' % message)
             self._assistant.set_mic_mute(True)
             self._assistant.start_conversation()
-            self._assistant.send_text_query(m)
+            self._assistant.send_text_query(message)
             self._assistant.set_mic_mute(False)
 
 def main():
@@ -138,24 +141,22 @@ def main():
                         default='assistantsdk-170114-project-diva-jy6ql4',
                         help='The device model ID registered with Google')
     parser.add_argument('--project_id', type=str, metavar='PROJECT_ID',
-                        required=False,
+                        required=False,default='',
                         help='The project ID used to register device instances.')
     parser.add_argument('-v', '--version', action='version', 
                         version='%(prog)s ' + Assistant.__version_str__())
     args = parser.parse_args()            
 
-    assistant = MyAssistant(args.credentials, args.device_model_id)
+    assistant = MyAssistant(args.credentials, args.project_id, args.device_model_id)
 
     assistant.start()
 
-    fb = firebase.FirebaseApplication('https://assistantsdk-170114.firebaseio.com/', None)
     while True:
         m = input()
         try:
             m = COMMANDS[m]
         except:
             pass
-        print(m)
         assistant.send_text(m)
 
 if __name__ == '__main__':
