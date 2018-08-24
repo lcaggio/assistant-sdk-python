@@ -43,9 +43,10 @@ COMMANDS['0004368999'] = "Riproduci Peppa Pig da Netflix"
 
 class MyAssistant(object):
 
-    def __init__(self, credentials, device_model_id):
+    def __init__(self, credentials, device_model_id, project_id):
         self._assistant = None
         self._device_model_id = device_model_id
+        self.project_id = project_id
         self._can_configure = False
         self._can_start_conversation = False
         self._credentials = credentials
@@ -65,6 +66,9 @@ class MyAssistant(object):
 
         with Assistant(credentials,self._device_model_id) as assistant:
             self._assistant = assistant
+            self._device_id = assistant.device_id
+            if self._project_id:
+                self._register_device()
             for event in assistant.start():
                 self._process_event(event)
 
@@ -87,13 +91,22 @@ class MyAssistant(object):
         elif event.type == EventType.ON_ASSISTANT_ERROR and event.args and event.args['is_fatal']:
             sys.exit(1)
 
-    def send_text(self, m):
-        if self._can_start_conversation:
-            print('Sending text message: %s' % m)
-            self._assistant.set_mic_mute(True)
-            self._assistant.start_conversation()
-            self._assistant.send_text_query(m)
-            self._assistant.set_mic_mute(False)
+    def _register_device(self):
+        base_url = '/'.join([DEVICE_API_URL, 'projects', self._project_id, 'devices'])
+        device_url = '/'.join([base_url, self._device_id])
+        session = google.auth.transport.requests.AuthorizedSession(self._credentials)
+        r = session.get(device_url)
+        print(device_url, r.status_code)
+        if r.status_code == 404:
+            print('Registering....')
+            r = session.post(base_url, data=json.dumps({
+                'id': self._device_id,
+                'model_id': self._device_model_id,
+                'client_type': 'SDK_LIBRARY'
+            }))
+            if r.status_code != 200:
+                raise Exception('failed to register device: ' + r.text)
+            print('\rDevice registered.')
 
     def _repeat_after_me(self, message):
         self._assistant.set_mic_mute(True)
@@ -101,6 +114,13 @@ class MyAssistant(object):
         self._assistant.send_text_query('Ripeti dopo di me %s' % message)
         self._assistant.set_mic_mute(False)
 
+    def send_text(self, message):
+        if self._can_start_conversation:
+            print('Sending text message: %s' % message)
+            self._assistant.set_mic_mute(True)
+            self._assistant.start_conversation()
+            self._assistant.send_text_query(m)
+            self._assistant.set_mic_mute(False)
 
 def main():
     parser = argparse.ArgumentParser(
